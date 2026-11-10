@@ -1,0 +1,23 @@
+{
+  "name": "careguide-backend",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "bun --watch src/index.ts",
+    "start": "bun src/index.ts",
+    "seed": "bun src/seed.ts",
+    "typecheck": "tsc --noEmit",
+    "sync:types": "tsc --project tsconfig.types.json --declaration --emitDeclarationOnly --outFile ../careguide-frontend/src/types/api-contract.d.ts"
+  },
+  "dependencies": {
+    "@hono/zod-validator": "^0.4.3",
+    "hono": "^4.7.4",
+    "mongoose": "^8.12.1",
+    "zod": "^3.24.2"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "^5.8.2"
+  }
+}
