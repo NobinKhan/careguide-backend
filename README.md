@@ -6,6 +6,7 @@ Role-based REST & RPC API built with **Bun**, **Hono**, and **Mongoose (MongoDB)
 - **Runtime:** Bun (`Bun.password.hash` / `Bun.password.verify` with `bcrypt`)
 - **Framework:** Hono (`hono`, `hono/jwt`, `hono/cors`, `@hono/zod-validator`, `zod`)
 - **Database:** MongoDB + Mongoose (`InferSchemaType<typeof schema>`, `globalThis` connection singleton)
+- **Containerization:** Multi-stage Docker build using **Chainguard** (`cgr.dev/chainguard/bun:latest-dev` builder $\rightarrow$ `cgr.dev/chainguard/glibc-dynamic:latest` minimal non-root runtime)
 
 ## MongoDB Indexing Strategy (Strictly 4 Custom Indexes)
 1. **`users` (`{ email: 1 }`, unique):** Powers $O(\log N)$ user lookup on `POST /api/auth/login` and enforces unique email addresses.
@@ -14,7 +15,7 @@ Role-based REST & RPC API built with **Bun**, **Hono**, and **Mongoose (MongoDB)
 4. **`posts` (`{ userId: 1, _id: -1 }`, compound ESR):** Powers Scenario 2 Aggregation (`$lookup` from `users._id` to `posts.userId` sorted by `_id: -1`) and user deletion cascade.
 - **Built-in `_id_` Index Reuse:** All global chronological queries (`GET /api/users`, `GET /api/notes/all`, `GET /api/posts`) sort by `{ _id: -1 }`, reusing MongoDB's default `_id_` index with zero extra index overhead.
 
-## Quick Start
+## Quick Start (Local Development)
 
 ```bash
 cp .env.example .env
@@ -23,9 +24,30 @@ bun run seed
 bun run dev
 ```
 
-## Scripts
+## Docker & VPS Deployment
+
+The project includes an optimized multi-stage `Dockerfile` compiling the Bun server and demo seeder into standalone Linux binaries packaged inside a hardened, zero-CVE **Chainguard** runtime:
+
+```bash
+# 1. Clone repository on VPS
+git clone https://github.com/NobinKhan/careguide-backend.git
+cd careguide-backend
+
+# 2. Automated Build, Start & Seed
+./deploy.sh
+```
+
+Or manually using Docker Compose:
+```bash
+docker compose up -d --build
+docker compose exec backend /app/seed
+```
+
+## Available Scripts
 - `bun run dev` — Start development server with hot reload (`http://localhost:3000`)
 - `bun run start` — Start production server
-- `bun run seed` — Reset database, sync indexes via `mongoose.connection.syncIndexes()`, print active indexes, and populate deterministic demo data
+- `bun run seed` — Reset database, sync indexes via `mongoose.connection.syncIndexes()`, and populate deterministic demo data
+- `bun run build:binary` — Compile backend into standalone binary (`dist/server`)
+- `bun run build:seed` — Compile seeder into standalone binary (`dist/seed`)
 - `bun run sync:types` — Emit TypeScript contract declarations into `../careguide-frontend/src/types/api-contract.d.ts`
 - `bun run typecheck` — Run `tsc --noEmit`
