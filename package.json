@@ -7,6 +7,7 @@
     "dev": "bun --watch src/index.ts",
     "start": "bun src/index.ts",
     "seed": "bun src/seed.ts",
+    "deploy": "bun scripts/deploy.ts",
     "build:binary": "bun build src/index.ts --compile --minify --outfile dist/server",
     "build:seed": "bun build src/seed.ts --compile --minify --outfile dist/seed",
     "typecheck": "tsc --noEmit",
