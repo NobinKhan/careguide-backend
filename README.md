@@ -1,11 +1,11 @@
 # Care Guide BD — Backend API (`careguide-backend`)
 
-Role-based REST & RPC API built with **Bun**, **Hono**, and **Mongoose (MongoDB)** implementing strict ESR-compliant indexing and single-pipeline aggregations.
+Role-based REST & RPC API built with **Bun**, **Hono**, and **Mongoose (MongoDB 9)** implementing strict ESR-compliant indexing and single-pipeline aggregations.
 
 ## Tech Stack
 - **Runtime:** Bun (`Bun.password.hash` / `Bun.password.verify` with `bcrypt`)
 - **Framework:** Hono (`hono`, `hono/jwt`, `hono/cors`, `@hono/zod-validator`, `zod`)
-- **Database:** MongoDB + Mongoose (`InferSchemaType<typeof schema>`, `globalThis` connection singleton)
+- **Database:** MongoDB 9 (Latest) + Mongoose (`InferSchemaType<typeof schema>`, `globalThis` connection singleton)
 - **Containerization:** Multi-stage Docker build using **Chainguard** (`cgr.dev/chainguard/bun:latest-dev` builder $\rightarrow$ `cgr.dev/chainguard/glibc-dynamic:latest` minimal non-root runtime)
 
 ## MongoDB Indexing Strategy (Strictly 4 Custom Indexes)
@@ -24,7 +24,7 @@ bun run seed
 bun run dev
 ```
 
-## Docker & VPS Deployment
+## Docker & VPS Deployment (MongoDB 9 + Bun)
 
 The project includes an optimized multi-stage `Dockerfile` compiling the Bun server and demo seeder into standalone Linux binaries packaged inside a hardened, zero-CVE **Chainguard** runtime:
 
@@ -33,8 +33,8 @@ The project includes an optimized multi-stage `Dockerfile` compiling the Bun ser
 git clone https://github.com/NobinKhan/careguide-backend.git
 cd careguide-backend
 
-# 2. Automated Build, Start & Seed
-./deploy.sh
+# 2. Automated Build, Start & Seed via Bun native script
+bun run deploy
 ```
 
 Or manually using Docker Compose:
@@ -47,6 +47,7 @@ docker compose exec backend /app/seed
 - `bun run dev` — Start development server with hot reload (`http://localhost:3000`)
 - `bun run start` — Start production server
 - `bun run seed` — Reset database, sync indexes via `mongoose.connection.syncIndexes()`, and populate deterministic demo data
+- `bun run deploy` — Native Bun script to build containers, start MongoDB 9, and run seed
 - `bun run build:binary` — Compile backend into standalone binary (`dist/server`)
 - `bun run build:seed` — Compile seeder into standalone binary (`dist/seed`)
 - `bun run sync:types` — Emit TypeScript contract declarations into `../careguide-frontend/src/types/api-contract.d.ts`
