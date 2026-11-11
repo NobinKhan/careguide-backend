@@ -4,11 +4,31 @@ import { UserModel } from './models/User';
 import { NoteModel } from './models/Note';
 import { PostModel } from './models/Post';
 
+const MIN_PASSWORD_LENGTH = 8;
+
+function requiredPassword(name: string): string {
+  const value = process.env[name];
+  if (!value) {
+    throw new Error(
+      `${name} is not set. Add it to .env before running the seed (see .env.example).`
+    );
+  }
+  if (value.length < MIN_PASSWORD_LENGTH) {
+    throw new Error(`${name} must be at least ${MIN_PASSWORD_LENGTH} characters long.`);
+  }
+  return value;
+}
+
 async function seed() {
   if (process.env.NODE_ENV === 'production' && process.env.SEED_RESET !== '1') {
     console.warn('Warning: Refusing to seed database in production without SEED_RESET=1');
     process.exit(1);
   }
+
+  // Read credentials before touching the database so a missing value never wipes data.
+  const adminPassword = requiredPassword('SEED_ADMIN_PASSWORD');
+  const userPassword = requiredPassword('SEED_USER_PASSWORD');
+  const adminEmail = (process.env.SEED_ADMIN_EMAIL || 'admin@careguide.bd').trim().toLowerCase();
 
   const startTime = performance.now();
   await connectDB();
@@ -25,14 +45,14 @@ async function seed() {
   await mongoose.connection.syncIndexes();
 
   const [adminHash, userHash] = await Promise.all([
-    Bun.password.hash('Admin@123', { algorithm: 'bcrypt', cost: 10 }),
-    Bun.password.hash('User@123', { algorithm: 'bcrypt', cost: 10 }),
+    Bun.password.hash(adminPassword, { algorithm: 'bcrypt', cost: 10 }),
+    Bun.password.hash(userPassword, { algorithm: 'bcrypt', cost: 10 }),
   ]);
 
   const users = await UserModel.insertMany([
     {
       name: 'System Admin',
-      email: 'admin@careguide.bd',
+      email: adminEmail,
       passwordHash: adminHash,
       role: 'admin',
       interests: ['architecture', 'chess', 'reading'],
@@ -262,7 +282,7 @@ async function seed() {
   const elapsedMs = (performance.now() - startTime).toFixed(0);
   console.log(`\nSeed completed deterministically in ${elapsedMs}ms:`);
   console.log(
-    '- 4 Users (admin@careguide.bd, nazrul@careguide.bd, rahim@careguide.bd, karim@careguide.bd)'
+    `- 4 Users (${adminEmail}, nazrul@careguide.bd, rahim@careguide.bd, karim@careguide.bd)`
   );
   console.log('- 15 Private Notes');
   console.log('- 12 Public Posts');
@@ -271,6 +291,6 @@ async function seed() {
 }
 
 seed().catch((err) => {
-  console.error('Seed failed:', err);
+  console.error('Seed failed:', err instanceof Error ? err.message : err);
   process.exit(1);
 });

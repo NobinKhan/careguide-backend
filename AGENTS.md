@@ -307,11 +307,11 @@ const userWithPosts = await UserModel.aggregate([
 
 Because the submission email states *"ensure that your computer is in good working condition and is capable of running the project in a local development environment during the interview session"*, `careguide-backend/src/seed.ts` **must** be implemented so running `bun run seed` resets and populates deterministic demo data in under 1 second:
 
-1. **Demo Credentials (Displayed on Frontend Login Screen for Reviewer Convenience):**
-   * **Admin Account:** `admin@careguide.bd` / `Admin@123` (Role: `admin`, Interests: `['architecture', 'chess', 'reading']`)
-   * **User 1 Account:** `nazrul@careguide.bd` / `User@123` (Role: `user`, Interests: `['chess', 'coding', 'motorcycles']`)
-   * **User 2 Account:** `rahim@careguide.bd` / `User@123` (Role: `user`, Interests: `['reading', 'coding', 'photography']`)
-   * **User 3 Account:** `karim@careguide.bd` / `User@123` (Role: `user`, Interests: `['chess', 'reading', 'travel']`)
+1. **Demo Credentials (from environment variables only — never hard-code passwords in source, docs or the frontend):**
+   * **Admin Account:** `SEED_ADMIN_EMAIL` (default `admin@careguide.bd`) / `SEED_ADMIN_PASSWORD` (Role: `admin`, Interests: `['architecture', 'chess', 'reading']`)
+   * **User 1 Account:** `nazrul@careguide.bd` / `SEED_USER_PASSWORD` (Role: `user`, Interests: `['chess', 'coding', 'motorcycles']`)
+   * **User 2 Account:** `rahim@careguide.bd` / `SEED_USER_PASSWORD` (Role: `user`, Interests: `['reading', 'coding', 'photography']`)
+   * **User 3 Account:** `karim@careguide.bd` / `SEED_USER_PASSWORD` (Role: `user`, Interests: `['chess', 'reading', 'travel']`)
 2. **Pre-Populated Collections:**
    * **15 Private Notes** distributed across Admin, User 1, User 2, and User 3 (so pagination and RBAC isolation are immediately visible).
    * **12 Public Posts** distributed across users (so Scenario 2 `$lookup` immediately returns rich data when clicking any user in the UI).
