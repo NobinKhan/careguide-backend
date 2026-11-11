@@ -13,11 +13,12 @@ async function seed() {
   const startTime = performance.now();
   await connectDB();
 
-  console.log('Resetting collections (users, notes, posts)...');
+  console.log('Resetting collections (users, notes, posts, login_throttles)...');
   await Promise.all([
     UserModel.deleteMany({}),
     NoteModel.deleteMany({}),
     PostModel.deleteMany({}),
+    mongoose.connection.collection('login_throttles').deleteMany({}),
   ]);
 
   console.log('Synchronizing explicit schema indexes via mongoose.connection.syncIndexes()...');
@@ -63,24 +64,94 @@ async function seed() {
 
   // 15 Private Notes distributed across Admin (3), Nazrul (4), Rahim (4), Karim (4)
   const notesData = [
-    { userId: admin._id, title: 'Admin Security Audit Checklist', content: 'Verify JWT HS256 expiry and role-based middleware guards across /api/users and /api/notes/all.' },
-    { userId: admin._id, title: 'MongoDB Indexing Review Notes', content: 'Confirmed only 4 explicit custom indexes exist across users, notes, and posts collections.' },
-    { userId: admin._id, title: 'VPS Deployment Runbook', content: 'Deploy Hono + Bun service behind reverse proxy and verify globalThis Mongoose connection pool.' },
+    {
+      userId: admin._id,
+      title: 'Quarterly Team Planning Checklist',
+      content:
+        'Finalize holiday schedule, review office workspace layout, and confirm Friday community meetup room.',
+    },
+    {
+      userId: admin._id,
+      title: 'Heritage Architecture Walking Tour',
+      content:
+        'Visit Curzon Hall, Ahsan Manzil, and Lalbagh Fort early Sunday morning for sketching.',
+    },
+    {
+      userId: admin._id,
+      title: 'Club Tournament Pairings & Clocks',
+      content:
+        'Check digital chess clocks, spare batteries, and score sheets before the Friday rapid event.',
+    },
 
-    { userId: nazrul._id, title: 'Chess Opening Repertoire', content: 'Practice Caro-Kann Defense lines and endgame rook positioning for weekend club match.' },
-    { userId: nazrul._id, title: 'Bun + Hono RPC Notes', content: 'Use Bun.password.hash with bcrypt cost 10 and hono/jwt to avoid external npm dependencies.' },
-    { userId: nazrul._id, title: 'Motorcycle Maintenance Log', content: 'Chain lubrication, tire pressure check, and brake fluid inspection at 5,000 km.' },
-    { userId: nazrul._id, title: 'SolidJS v2 Signals Study', content: 'Remember: components run once, never destructure props, and use createSignal/createMemo.' },
+    {
+      userId: nazrul._id,
+      title: 'Chess Opening Repertoire',
+      content:
+        'Practice Caro-Kann Defense lines and endgame rook positioning for the weekend club match.',
+    },
+    {
+      userId: nazrul._id,
+      title: 'Weekend Coding Project Ideas',
+      content:
+        'Build a personal PGN game viewer and a simple fuel-consumption tracker for long highway rides.',
+    },
+    {
+      userId: nazrul._id,
+      title: 'Motorcycle Maintenance Log',
+      content: 'Chain lubrication, tire pressure check, and brake fluid inspection at 5,000 km.',
+    },
+    {
+      userId: nazrul._id,
+      title: 'Evening Fitness & Stretching Routine',
+      content:
+        'Thirty minutes of jogging followed by mobility work before late-evening study sessions.',
+    },
 
-    { userId: rahim._id, title: 'Photography Golden Hour Spots', content: 'Buriganga riverfront and Parliament area offer high-contrast silhouettes at sunset.' },
-    { userId: rahim._id, title: 'Book Club Reading List', content: 'Finish Designing Data-Intensive Applications Chapters 3 and 4 on B-Trees and LSM-Trees.' },
-    { userId: rahim._id, title: 'TypeScript Strict Mode Tips', content: 'Derive model types with InferSchemaType<typeof schema> to prevent schema-interface drift.' },
-    { userId: rahim._id, title: 'Camera Lens Calibration', content: 'Test 50mm f/1.8 prime lens sharpness across aperture stops.' },
+    {
+      userId: rahim._id,
+      title: 'Photography Golden Hour Spots',
+      content:
+        'Buriganga riverfront and Parliament area offer high-contrast silhouettes at sunset.',
+    },
+    {
+      userId: rahim._id,
+      title: 'Book Club Reading List',
+      content:
+        'Finish reading Invisible Cities and prepare discussion questions for next Thursday evening.',
+    },
+    {
+      userId: rahim._id,
+      title: 'Darkroom Print & Framing Notes',
+      content:
+        'Order matte cotton rag paper and 12x18 black aluminum frames for the autumn exhibition.',
+    },
+    {
+      userId: rahim._id,
+      title: 'Camera Lens Calibration',
+      content: 'Test 50mm f/1.8 prime lens sharpness across aperture stops.',
+    },
 
-    { userId: karim._id, title: 'Sylhet Travel Itinerary', content: 'Day 1: Sreemangal tea gardens. Day 2: Lawachara National Park trail.' },
-    { userId: karim._id, title: 'Endgame Tactical Puzzles', content: 'Opposition and triangulation studies in king and pawn endings.' },
-    { userId: karim._id, title: 'Reading Notes: Clean Architecture', content: 'Keep domain boundaries explicit while avoiding unnecessary repository boilerplate.' },
-    { userId: karim._id, title: 'Packing Checklist for Coxs Bazar', content: 'Power bank, rain jacket, notebook, and compact tripod.' },
+    {
+      userId: karim._id,
+      title: 'Sylhet Travel Itinerary',
+      content: 'Day 1: Sreemangal tea gardens. Day 2: Lawachara National Park trail.',
+    },
+    {
+      userId: karim._id,
+      title: 'Endgame Tactical Puzzles',
+      content: 'Opposition and triangulation studies in king and pawn endings.',
+    },
+    {
+      userId: karim._id,
+      title: 'Reading Notes: The Shadow Lines',
+      content:
+        'Trace the family timeline between Dhaka, Calcutta, and London across the second half of the novel.',
+    },
+    {
+      userId: karim._id,
+      title: 'Packing Checklist for Coxs Bazar',
+      content: 'Power bank, rain jacket, notebook, and compact tripod.',
+    },
   ];
 
   // Insert sequentially so _id timestamps are strictly ordered
@@ -90,18 +161,66 @@ async function seed() {
 
   // 12 Public Posts distributed across users (3 per user)
   const postsData = [
-    { userId: admin._id, title: 'Welcome to Care Guide BD Engineering Portal', body: 'This portal demonstrates role-based access control, ESR-compliant MongoDB indexing, and single-pipeline aggregations.' },
-    { userId: nazrul._id, title: 'Why MongoDB ObjectId Sorting Beats Extra createdAt Indexes', body: 'The first 4 bytes of every MongoDB ObjectId encode a Unix timestamp, allowing chronological sorting via the free _id_ index.' },
-    { userId: rahim._id, title: 'Understanding Multikey Indexes in MongoDB', body: 'Indexing an array field like interests creates a multikey index that accelerates $match and $unwind aggregation stages.' },
-    { userId: karim._id, title: 'Dhaka Chess Community Weekly Meetup', body: 'Everyone with chess in their interests is welcome to join our Friday rapid tournament.' },
-    { userId: admin._id, title: 'ESR Rule: Equality, Sort, Range Explained', body: 'Compound index { userId: 1, _id: -1 } satisfies equality on userId and sort order on _id with zero in-memory blocking sort.' },
-    { userId: nazrul._id, title: 'Weekend Ride to Mawa Expressway', body: 'Early morning ride starting at 6:00 AM. Check tire pressure and safety gear before departure.' },
-    { userId: rahim._id, title: 'Street Photography Composition Guide', body: 'Leading lines and natural framing help isolate subjects in busy urban environments.' },
-    { userId: karim._id, title: 'Top 5 Technical Books for Backend Engineers', body: 'Database Internals and Designing Data-Intensive Applications remain essential reading.' },
-    { userId: admin._id, title: 'Optimizing $lookup Pipelines in MongoDB', body: 'Pairing $lookup with a compound { userId: 1, _id: -1 } index on the foreign collection makes user-posts aggregation super fast.' },
-    { userId: nazrul._id, title: 'Benchmarking Bun Native Password Hashing', body: 'Bun.password.hash provides native C/Zig bcrypt hashing without native node-gyp compilation issues.' },
-    { userId: rahim._id, title: 'Monsoon Photography Gear Protection', body: 'Always carry silica gel packs and a weather-sealed bag when shooting outdoors.' },
-    { userId: karim._id, title: 'Backpacking Across Northern Bangladesh', body: 'Historical terracotta temples in Puthia and Paharpur are must-visit heritage sites.' },
+    {
+      userId: admin._id,
+      title: 'Welcome to Care Guide BD Community Board',
+      body: 'Share your weekend plans, book recommendations, travel stories, and hobby updates with fellow members.',
+    },
+    {
+      userId: nazrul._id,
+      title: 'Preparing for Autumn Highway Rides',
+      body: 'A quick checklist on visor care, reflective vests, and group riding hand signals before heading out at dawn.',
+    },
+    {
+      userId: rahim._id,
+      title: 'Capturing Old Dhaka in Morning Light',
+      body: 'Walking the narrow lanes between 6:00 AM and 8:00 AM gives the best soft directional light for portraits.',
+    },
+    {
+      userId: karim._id,
+      title: 'Dhaka Chess Community Weekly Meetup',
+      body: 'Everyone with chess in their interests is welcome to join our Friday rapid tournament.',
+    },
+    {
+      userId: admin._id,
+      title: 'Modern Bengali Architecture Highlights',
+      body: 'Exploring how red brick, open courtyards, and natural ventilation shape contemporary civic buildings in Dhaka.',
+    },
+    {
+      userId: nazrul._id,
+      title: 'Weekend Ride to Mawa Expressway',
+      body: 'Early morning ride starting at 6:00 AM. Check tire pressure and safety gear before departure.',
+    },
+    {
+      userId: rahim._id,
+      title: 'Street Photography Composition Guide',
+      body: 'Leading lines and natural framing help isolate subjects in busy urban environments.',
+    },
+    {
+      userId: karim._id,
+      title: 'Five Favourite Travel Memoirs for Long Train Journeys',
+      body: 'From Himalayan trail diaries to riverboat chronicles across Bengal, these books make every trip shorter.',
+    },
+    {
+      userId: admin._id,
+      title: 'Monthly Community Book Swap This Saturday',
+      body: 'Bring up to three books you have finished and trade them over tea in the common lounge at 4:00 PM.',
+    },
+    {
+      userId: nazrul._id,
+      title: 'Analysing Classic Endgame Studies Over Coffee',
+      body: 'Looking at practical rook-and-pawn endgames where active king play turns a draw into a win.',
+    },
+    {
+      userId: rahim._id,
+      title: 'Monsoon Photography Gear Protection',
+      body: 'Always carry silica gel packs and a weather-sealed bag when shooting outdoors.',
+    },
+    {
+      userId: karim._id,
+      title: 'Backpacking Across Northern Bangladesh',
+      body: 'Historical terracotta temples in Puthia and Paharpur are must-visit heritage sites.',
+    },
   ];
 
   for (const p of postsData) {
@@ -114,14 +233,37 @@ async function seed() {
     PostModel.collection.indexes(),
   ]);
 
-  console.log('\n=== ACTIVE MONGODB INDEXES (VERIFIED VIA syncIndexes) ===');
-  console.log('users indexes:', JSON.stringify(userIndexes.map((i) => ({ name: i.name, key: i.key, unique: !!i.unique })), null, 2));
-  console.log('notes indexes:', JSON.stringify(noteIndexes.map((i) => ({ name: i.name, key: i.key })), null, 2));
-  console.log('posts indexes:', JSON.stringify(postIndexes.map((i) => ({ name: i.name, key: i.key })), null, 2));
+  console.log('\n=== ACTIVE DATABASE INDEXES (VERIFIED VIA syncIndexes) ===');
+  console.log(
+    'users indexes:',
+    JSON.stringify(
+      userIndexes.map((i) => ({ name: i.name, key: i.key, unique: !!i.unique })),
+      null,
+      2
+    )
+  );
+  console.log(
+    'notes indexes:',
+    JSON.stringify(
+      noteIndexes.map((i) => ({ name: i.name, key: i.key })),
+      null,
+      2
+    )
+  );
+  console.log(
+    'posts indexes:',
+    JSON.stringify(
+      postIndexes.map((i) => ({ name: i.name, key: i.key })),
+      null,
+      2
+    )
+  );
 
   const elapsedMs = (performance.now() - startTime).toFixed(0);
   console.log(`\nSeed completed deterministically in ${elapsedMs}ms:`);
-  console.log('- 4 Users (admin@careguide.bd, nazrul@careguide.bd, rahim@careguide.bd, karim@careguide.bd)');
+  console.log(
+    '- 4 Users (admin@careguide.bd, nazrul@careguide.bd, rahim@careguide.bd, karim@careguide.bd)'
+  );
   console.log('- 15 Private Notes');
   console.log('- 12 Public Posts');
 

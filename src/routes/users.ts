@@ -1,35 +1,37 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
-import { validate } from '../validate';
+import {
+  validate,
+  paginationSchema,
+  nameSchema,
+  emailSchema,
+  passwordSchema,
+  interestsSchema,
+} from '../validate';
 import { UserModel } from '../models/User';
 import { NoteModel } from '../models/Note';
 import { PostModel } from '../models/Post';
 import { requireAuth, requireAdmin, type AppVariables } from '../middleware/auth';
 import { serializeUser } from './auth';
 
-const paginationSchema = z.object({
-  page: z.coerce.number().int().min(1).default(1),
-  limit: z.coerce.number().int().min(1).max(100).default(10),
-});
-
 const updateInterestsSchema = z.object({
-  interests: z.array(z.string().trim().min(1).max(40)).max(20),
+  interests: interestsSchema,
 });
 
 const adminCreateUserSchema = z.object({
-  name: z.string().trim().min(1, 'Name is required').max(200),
-  email: z.string().trim().email('Valid email is required').toLowerCase(),
-  password: z.string().min(6, 'Password must be at least 6 characters').max(128),
+  name: nameSchema,
+  email: emailSchema,
+  password: passwordSchema,
   role: z.enum(['user', 'admin']).default('user'),
-  interests: z.array(z.string().trim().min(1).max(40)).max(20).default([]),
+  interests: interestsSchema.default([]),
 });
 
 const adminUpdateUserSchema = z.object({
-  name: z.string().trim().min(1).max(200).optional(),
-  email: z.string().trim().email().toLowerCase().optional(),
-  password: z.string().min(6).max(128).optional(),
+  name: nameSchema.optional(),
+  email: emailSchema.optional(),
+  password: passwordSchema.optional(),
   role: z.enum(['user', 'admin']).optional(),
-  interests: z.array(z.string().trim().min(1).max(40)).max(20).optional(),
+  interests: interestsSchema.optional(),
 });
 
 const deleteUserQuerySchema = z.object({
