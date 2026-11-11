@@ -5,6 +5,11 @@ import { NoteModel } from './models/Note';
 import { PostModel } from './models/Post';
 
 async function seed() {
+  if (process.env.NODE_ENV === 'production' && process.env.SEED_RESET !== '1') {
+    console.warn('Warning: Refusing to seed database in production without SEED_RESET=1');
+    process.exit(1);
+  }
+
   const startTime = performance.now();
   await connectDB();
 

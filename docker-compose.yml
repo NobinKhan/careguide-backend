@@ -10,7 +10,8 @@ services:
     environment:
       - PORT=3000
       - MONGODB_URI=${MONGODB_URI:-mongodb://mongo:27017/careguide}
-      - JWT_SECRET=${JWT_SECRET:-careguide-bd-vps-super-secure-jwt-secret-2026}
+      - JWT_SECRET=${JWT_SECRET:?Set JWT_SECRET in .env}
+      - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:5173}
     depends_on:
       mongo:
         condition: service_healthy

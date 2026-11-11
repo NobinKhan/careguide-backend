@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
-import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
+import { validate } from '../validate';
 import { UserModel } from '../models/User';
 import { NoteModel } from '../models/Note';
 import { PostModel } from '../models/Post';
@@ -13,23 +13,23 @@ const paginationSchema = z.object({
 });
 
 const updateInterestsSchema = z.object({
-  interests: z.array(z.string().trim().min(1)),
+  interests: z.array(z.string().trim().min(1).max(40)).max(20),
 });
 
 const adminCreateUserSchema = z.object({
-  name: z.string().trim().min(1, 'Name is required'),
+  name: z.string().trim().min(1, 'Name is required').max(200),
   email: z.string().trim().email('Valid email is required').toLowerCase(),
-  password: z.string().min(6, 'Password must be at least 6 characters'),
+  password: z.string().min(6, 'Password must be at least 6 characters').max(128),
   role: z.enum(['user', 'admin']).default('user'),
-  interests: z.array(z.string().trim().min(1)).default([]),
+  interests: z.array(z.string().trim().min(1).max(40)).max(20).default([]),
 });
 
 const adminUpdateUserSchema = z.object({
-  name: z.string().trim().min(1).optional(),
+  name: z.string().trim().min(1).max(200).optional(),
   email: z.string().trim().email().toLowerCase().optional(),
-  password: z.string().min(6).optional(),
+  password: z.string().min(6).max(128).optional(),
   role: z.enum(['user', 'admin']).optional(),
-  interests: z.array(z.string().trim().min(1)).optional(),
+  interests: z.array(z.string().trim().min(1).max(40)).max(20).optional(),
 });
 
 const deleteUserQuerySchema = z.object({
@@ -42,7 +42,7 @@ const deleteUserQuerySchema = z.object({
 
 export const userRoutes = new Hono<{ Variables: AppVariables }>()
   .use('*', requireAuth)
-  .patch('/me/interests', zValidator('json', updateInterestsSchema), async (c) => {
+  .patch('/me/interests', validate('json', updateInterestsSchema), async (c) => {
     const authUser = c.get('user');
     const { interests } = c.req.valid('json');
     const normalized = Array.from(
@@ -64,7 +64,7 @@ export const userRoutes = new Hono<{ Variables: AppVariables }>()
 
     return c.json({ user: serializeUser(updated) });
   })
-  .get('/', requireAdmin, zValidator('query', paginationSchema), async (c) => {
+  .get('/', requireAdmin, validate('query', paginationSchema), async (c) => {
     const { page, limit } = c.req.valid('query');
     const skip = (page - 1) * limit;
 
@@ -82,7 +82,7 @@ export const userRoutes = new Hono<{ Variables: AppVariables }>()
       totalPages: Math.max(1, Math.ceil(total / limit)),
     });
   })
-  .post('/', requireAdmin, zValidator('json', adminCreateUserSchema), async (c) => {
+  .post('/', requireAdmin, validate('json', adminCreateUserSchema), async (c) => {
     const { name, email, password, role, interests } = c.req.valid('json');
 
     const existing = await UserModel.findOne({ email }).lean();
@@ -105,9 +105,21 @@ export const userRoutes = new Hono<{ Variables: AppVariables }>()
 
     return c.json({ user: serializeUser(created) }, 201);
   })
-  .patch('/:id', requireAdmin, zValidator('json', adminUpdateUserSchema), async (c) => {
+  .patch('/:id', requireAdmin, validate('json', adminUpdateUserSchema), async (c) => {
     const id = c.req.param('id');
     const body = c.req.valid('json');
+    const authUser = c.get('user');
+
+    if (id === authUser.id && body.role && body.role !== 'admin') {
+      return c.json({ error: "You can't remove your own admin role" }, 400);
+    }
+
+    if (body.email) {
+      const existing = await UserModel.findOne({ email: body.email, _id: { $ne: id } }).lean();
+      if (existing) {
+        return c.json({ error: 'Email is already registered' }, 409);
+      }
+    }
 
     const updateFields: Record<string, unknown> = {};
     if (body.name !== undefined) updateFields.name = body.name;
@@ -136,9 +148,14 @@ export const userRoutes = new Hono<{ Variables: AppVariables }>()
 
     return c.json({ user: serializeUser(updated) });
   })
-  .delete('/:id', requireAdmin, zValidator('query', deleteUserQuerySchema), async (c) => {
+  .delete('/:id', requireAdmin, validate('query', deleteUserQuerySchema), async (c) => {
     const id = c.req.param('id');
     const { keepData } = c.req.valid('query');
+    const authUser = c.get('user');
+
+    if (id === authUser.id) {
+      return c.json({ error: "You can't delete your own account" }, 400);
+    }
 
     // Uses built-in _id_ index
     const deletedUser = await UserModel.findByIdAndDelete(id).lean();

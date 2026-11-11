@@ -1,5 +1,6 @@
 import type { Context, Next } from 'hono';
 import { sign, verify } from 'hono/jwt';
+import { UserModel } from '../models/User';
 
 export interface AuthUser {
   id: string;
@@ -11,8 +12,13 @@ export type AppVariables = {
   user: AuthUser;
 };
 
-const getJwtSecret = (): string =>
-  process.env.JWT_SECRET || 'careguide-bd-super-secret-jwt-key-2026';
+const getJwtSecret = (): string => {
+  const secret = process.env.JWT_SECRET;
+  if (!secret) {
+    throw new Error('JWT_SECRET is not configured');
+  }
+  return secret;
+};
 
 export async function signToken(user: {
   _id: unknown;
@@ -37,10 +43,15 @@ export async function requireAuth(c: Context<{ Variables: AppVariables }>, next:
   const token = authHeader.slice(7).trim();
   try {
     const payload = await verify(token, getJwtSecret(), 'HS256');
+    // Verify against DB using built-in _id_ index to enforce instant revocation/demotion
+    const doc = await UserModel.findById(String(payload.sub)).select('email role').lean();
+    if (!doc) {
+      return c.json({ error: 'Unauthorized: account no longer exists' }, 401);
+    }
     c.set('user', {
-      id: String(payload.sub),
-      email: String(payload.email),
-      role: payload.role === 'admin' ? 'admin' : 'user',
+      id: String(doc._id),
+      email: doc.email,
+      role: doc.role === 'admin' ? 'admin' : 'user',
     });
     await next();
   } catch {

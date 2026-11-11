@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
-import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
 import { Types } from 'mongoose';
+import { validate } from '../validate';
 import { UserModel } from '../models/User';
 import { requireAuth, type AppVariables } from '../middleware/auth';
 
@@ -12,9 +12,11 @@ const paginationSchema = z.object({
 
 export const aggregationRoutes = new Hono<{ Variables: AppVariables }>()
   .use('*', requireAuth)
-  .get('/users-by-interest', async (c) => {
-    // Scenario 1 Pipeline: Group Users by Interests (Single UserModel.aggregate() call)
-    const groupedByInterest = await UserModel.aggregate([
+  .get('/users-by-interest', validate('query', paginationSchema), async (c) => {
+    const { page, limit } = c.req.valid('query');
+
+    // Scenario 1 Pipeline: Group Users by Interests with Pagination (Single UserModel.aggregate() call)
+    const aggregated = await UserModel.aggregate([
       // Stage 1: Filter users who have at least one interest (leverages { interests: 1 } multikey index)
       { $match: { interests: { $exists: true, $not: { $size: 0 } } } },
       // Stage 2: Deconstruct the interests array into individual documents
@@ -44,9 +46,20 @@ export const aggregationRoutes = new Hono<{ Variables: AppVariables }>()
           users: 1,
         },
       },
+      // Stage 5: Paginate within the same pipeline via $facet (zero extra queries)
+      {
+        $facet: {
+          items: [{ $skip: (page - 1) * limit }, { $limit: limit }],
+          meta: [{ $count: 'total' }],
+        },
+      },
     ]);
 
-    const items: InterestGroupDTO[] = groupedByInterest.map((group) => ({
+    const result = aggregated[0] || { items: [], meta: [] };
+    const total = result.meta?.[0]?.total ?? 0;
+    const totalPages = Math.max(1, Math.ceil(total / limit));
+
+    const items: InterestGroupDTO[] = (result.items || []).map((group: any) => ({
       interest: String(group.interest),
       totalUsers: Number(group.totalUsers),
       users: (group.users || []).map((u: any) => ({
@@ -57,9 +70,15 @@ export const aggregationRoutes = new Hono<{ Variables: AppVariables }>()
       })),
     }));
 
-    return c.json({ items });
+    return c.json({
+      items,
+      page,
+      limit,
+      total,
+      totalPages,
+    });
   })
-  .get('/user-posts/:userId', zValidator('query', paginationSchema), async (c) => {
+  .get('/user-posts/:userId', validate('query', paginationSchema), async (c) => {
     const userId = c.req.param('userId');
     const { page, limit } = c.req.valid('query');
 
@@ -85,7 +104,17 @@ export const aggregationRoutes = new Hono<{ Variables: AppVariables }>()
           as: 'posts',
         },
       },
-      // Stage 3: Exclude passwordHash from output
+      // Stage 3: $lookup count of total posts for pagination (uses postSchema.index({ userId: 1, _id: -1 }))
+      {
+        $lookup: {
+          from: 'posts',
+          localField: '_id',
+          foreignField: 'userId',
+          pipeline: [{ $count: 'n' }],
+          as: 'postCount',
+        },
+      },
+      // Stage 4: Exclude passwordHash from output
       {
         $project: {
           passwordHash: 0,
@@ -98,6 +127,9 @@ export const aggregationRoutes = new Hono<{ Variables: AppVariables }>()
     }
 
     const doc = userWithPosts[0];
+    const total = doc.postCount?.[0]?.n ?? 0;
+    const totalPages = Math.max(1, Math.ceil(total / limit));
+
     const response: UserPostsAggregationResponseDTO = {
       user: {
         _id: String(doc._id),
@@ -118,6 +150,8 @@ export const aggregationRoutes = new Hono<{ Variables: AppVariables }>()
       },
       page,
       limit,
+      total,
+      totalPages,
     };
 
     return c.json(response);

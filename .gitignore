@@ -4,3 +4,4 @@ dist-types/
 .env
 *.log
 .DS_Store
+.agents/

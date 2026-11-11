@@ -1,7 +1,8 @@
 import { Hono } from 'hono';
-import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
+import { validate } from '../validate';
 import { PostModel } from '../models/Post';
+import { UserModel } from '../models/User';
 import { requireAuth, type AppVariables } from '../middleware/auth';
 
 const paginationSchema = z.object({
@@ -10,23 +11,33 @@ const paginationSchema = z.object({
 });
 
 const createPostSchema = z.object({
-  title: z.string().trim().min(1, 'Title is required'),
-  body: z.string().min(1, 'Body is required'),
+  title: z.string().trim().min(1, 'Title is required').max(200, 'Title must be 200 characters or less'),
+  body: z.string().min(1, 'Body is required').max(10000, 'Body must be 10000 characters or less'),
 });
 
-export function serializePost(doc: any): PostDTO {
-  const isPopulated = doc.userId && typeof doc.userId === 'object' && '_id' in doc.userId;
+export function serializePost(
+  doc: any,
+  authorMap?: Map<string, AuthorSummaryDTO | null>
+): PostDTO {
+  const rawUserId = doc.userId?._id ? doc.userId._id : doc.userId;
+  const userIdStr = rawUserId ? String(rawUserId) : '';
+
+  let author: AuthorSummaryDTO | null = null;
+  if (authorMap) {
+    author = authorMap.get(userIdStr) ?? null;
+  } else if (doc.userId && typeof doc.userId === 'object' && 'email' in doc.userId) {
+    author = {
+      _id: String(doc.userId._id),
+      name: doc.userId.name,
+      email: doc.userId.email,
+      role: doc.userId.role,
+    };
+  }
+
   return {
     _id: String(doc._id),
-    userId: isPopulated ? String(doc.userId._id) : String(doc.userId),
-    author: isPopulated
-      ? {
-          _id: String(doc.userId._id),
-          name: doc.userId.name,
-          email: doc.userId.email,
-          role: doc.userId.role,
-        }
-      : null,
+    userId: userIdStr,
+    author,
     title: doc.title,
     body: doc.body,
     createdAt: doc.createdAt ? new Date(doc.createdAt).toISOString() : undefined,
@@ -36,7 +47,7 @@ export function serializePost(doc: any): PostDTO {
 
 export const postRoutes = new Hono<{ Variables: AppVariables }>()
   .use('*', requireAuth)
-  .get('/', zValidator('query', paginationSchema), async (c) => {
+  .get('/', validate('query', paginationSchema), async (c) => {
     const { page, limit } = c.req.valid('query');
     const skip = (page - 1) * limit;
 
@@ -46,20 +57,34 @@ export const postRoutes = new Hono<{ Variables: AppVariables }>()
         .sort({ _id: -1 })
         .skip(skip)
         .limit(limit)
-        .populate('userId', 'name email role')
         .lean(),
       PostModel.countDocuments({}),
     ]);
 
+    const userIds = Array.from(new Set(docs.map((d) => String(d.userId)).filter(Boolean)));
+    const authors = await UserModel.find({ _id: { $in: userIds } })
+      .select('name email role')
+      .lean();
+
+    const authorMap = new Map<string, AuthorSummaryDTO>();
+    for (const a of authors) {
+      authorMap.set(String(a._id), {
+        _id: String(a._id),
+        name: a.name,
+        email: a.email,
+        role: a.role,
+      });
+    }
+
     return c.json({
-      items: docs.map(serializePost),
+      items: docs.map((d) => serializePost(d, authorMap)),
       page,
       limit,
       total,
       totalPages: Math.max(1, Math.ceil(total / limit)),
     });
   })
-  .post('/', zValidator('json', createPostSchema), async (c) => {
+  .post('/', validate('json', createPostSchema), async (c) => {
     const authUser = c.get('user');
     const { title, body } = c.req.valid('json');
 
@@ -69,6 +94,16 @@ export const postRoutes = new Hono<{ Variables: AppVariables }>()
       body,
     });
 
-    const populated = await created.populate('userId', 'name email role');
-    return c.json({ post: serializePost(populated) }, 201);
+    const authorUser = await UserModel.findById(authUser.id).select('name email role').lean();
+    const authorMap = new Map<string, AuthorSummaryDTO>();
+    if (authorUser) {
+      authorMap.set(authUser.id, {
+        _id: String(authorUser._id),
+        name: authorUser.name,
+        email: authorUser.email,
+        role: authorUser.role,
+      });
+    }
+
+    return c.json({ post: serializePost(created, authorMap) }, 201);
   });
