@@ -9,8 +9,12 @@ console.log('==========================================================');
 if (!fs.existsSync('.env')) {
   console.log('Creating .env from .env.example...');
   let content = fs.readFileSync('.env.example', 'utf-8');
-  const generatedSecret = crypto.randomUUID().replace(/-/g, '') + crypto.randomUUID().replace(/-/g, '');
-  content = content.replace('JWT_SECRET=replace-with-secure-secret', `JWT_SECRET=${generatedSecret}`);
+  const generatedSecret =
+    crypto.randomUUID().replace(/-/g, '') + crypto.randomUUID().replace(/-/g, '');
+  content = content.replace(
+    'JWT_SECRET=replace-with-secure-secret',
+    `JWT_SECRET=${generatedSecret}`
+  );
   fs.writeFileSync('.env', content, 'utf-8');
   console.log('generated a new JWT_SECRET in .env');
 }

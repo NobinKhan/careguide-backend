@@ -56,6 +56,8 @@ bun run seed
 bun run dev
 ```
 
+> **CORS Configuration (`CORS_ORIGINS`):** By default, `CORS_ORIGINS` allows `http://localhost:5173,http://127.0.0.1:5173`. When deploying a frontend (e.g. Cloudflare Pages) or opening Vite on a LAN IP, add the frontend origin(s) to `CORS_ORIGINS` in `.env` as a comma-separated list (for example: `CORS_ORIGINS=http://localhost:5173,http://127.0.0.1:5173,https://your-app.pages.dev`).
+
 ## Docker & VPS Deployment (MongoDB 9 + Bun)
 
 The project includes an optimized multi-stage `Dockerfile` compiling the Bun server and demo seeder into standalone Linux binaries packaged inside a hardened, zero-CVE **Chainguard** runtime:

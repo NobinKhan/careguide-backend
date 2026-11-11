@@ -1,23 +1,37 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
-import { validate } from '../validate';
+import mongoose from 'mongoose';
+import {
+  validate,
+  nameSchema,
+  emailSchema,
+  passwordSchema,
+  loginPasswordSchema,
+  interestsSchema,
+} from '../validate';
 import { UserModel } from '../models/User';
 import { requireAuth, signToken, type AppVariables } from '../middleware/auth';
 
 const registerSchema = z.object({
-  name: z.string().trim().min(1, 'Name is required').max(200, 'Name must be 200 characters or less'),
-  email: z.string().trim().email('Valid email is required').toLowerCase(),
-  password: z.string().min(6, 'Password must be at least 6 characters').max(128, 'Password must be 128 characters or less'),
-  interests: z.array(z.string().trim().min(1).max(40)).max(20).default([]),
+  name: nameSchema,
+  email: emailSchema,
+  password: passwordSchema,
+  interests: interestsSchema.default([]),
 });
 
 const loginSchema = z.object({
-  email: z.string().trim().email('Valid email is required').toLowerCase(),
-  password: z.string().min(1, 'Password is required').max(128),
+  email: emailSchema,
+  password: loginPasswordSchema,
 });
 
-// shortcut: in-memory, single instance
-const loginThrottleMap = new Map<string, { count: number; until: number }>();
+interface LoginThrottleDoc {
+  _id: string;
+  count: number;
+  until: number;
+}
+
+const getLoginThrottleCollection = () =>
+  mongoose.connection.collection<LoginThrottleDoc>('login_throttles');
 
 export function serializeUser(doc: any): UserDTO {
   return {
@@ -62,28 +76,40 @@ export const authRoutes = new Hono<{ Variables: AppVariables }>()
     const { email, password } = c.req.valid('json');
 
     const now = Date.now();
-    const throttle = loginThrottleMap.get(email);
+    const throttleKey = `login-throttle:${email}`;
+    const throttleCol = getLoginThrottleCollection();
+
+    // Uses MongoDB built-in _id_ index (zero custom index overhead, shared across processes)
+    const throttle = await throttleCol.findOne({ _id: throttleKey });
     if (throttle && throttle.until > now && throttle.count >= 5) {
       return c.json({ error: 'Too many attempts. Try again in 15 minutes.' }, 429);
     }
 
     // Uses Index 1: { email: 1 } unique index for O(log N) lookup
     const userDoc = await UserModel.findOne({ email });
-    const isThrottleActive = throttle && throttle.until > now;
-    const currentCount = isThrottleActive ? throttle.count : 0;
+    const isThrottleActive = Boolean(throttle && throttle.until > now);
+    const currentCount = isThrottleActive ? throttle!.count : 0;
 
     if (!userDoc) {
-      loginThrottleMap.set(email, { count: currentCount + 1, until: now + 15 * 60 * 1000 });
+      await throttleCol.updateOne(
+        { _id: throttleKey },
+        { $set: { count: currentCount + 1, until: now + 15 * 60 * 1000 } },
+        { upsert: true }
+      );
       return c.json({ error: 'Invalid email or password' }, 401);
     }
 
     const valid = await Bun.password.verify(password, userDoc.passwordHash);
     if (!valid) {
-      loginThrottleMap.set(email, { count: currentCount + 1, until: now + 15 * 60 * 1000 });
+      await throttleCol.updateOne(
+        { _id: throttleKey },
+        { $set: { count: currentCount + 1, until: now + 15 * 60 * 1000 } },
+        { upsert: true }
+      );
       return c.json({ error: 'Invalid email or password' }, 401);
     }
 
-    loginThrottleMap.delete(email);
+    await throttleCol.deleteOne({ _id: throttleKey });
 
     const user = serializeUser(userDoc);
     const token = await signToken(userDoc);

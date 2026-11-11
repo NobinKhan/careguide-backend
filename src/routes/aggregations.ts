@@ -1,14 +1,8 @@
 import { Hono } from 'hono';
-import { z } from 'zod';
 import { Types } from 'mongoose';
-import { validate } from '../validate';
+import { validate, paginationSchema } from '../validate';
 import { UserModel } from '../models/User';
 import { requireAuth, type AppVariables } from '../middleware/auth';
-
-const paginationSchema = z.object({
-  page: z.coerce.number().int().min(1).default(1),
-  limit: z.coerce.number().int().min(1).max(100).default(10),
-});
 
 export const aggregationRoutes = new Hono<{ Variables: AppVariables }>()
   .use('*', requireAuth)
@@ -86,11 +80,11 @@ export const aggregationRoutes = new Hono<{ Variables: AppVariables }>()
       return c.json({ error: 'Invalid userId ObjectId' }, 400);
     }
 
-    // Scenario 2 Pipeline: Retrieve All Posts Belonging to a Particular User ($lookup)
+    // Scenario 2 Pipeline: Retrieve All Posts Belonging to a Particular User (single $lookup stage)
     const userWithPosts = await UserModel.aggregate([
       // Stage 1: Match target user by _id (uses built-in _id_ index)
       { $match: { _id: new Types.ObjectId(userId) } },
-      // Stage 2: $lookup posts from 'posts' collection (uses postSchema.index({ userId: 1, _id: -1 }))
+      // Stage 2: Single $lookup stage from 'posts' collection (uses postSchema.index({ userId: 1, _id: -1 }))
       {
         $lookup: {
           from: 'posts',
@@ -98,26 +92,28 @@ export const aggregationRoutes = new Hono<{ Variables: AppVariables }>()
           foreignField: 'userId',
           pipeline: [
             { $sort: { _id: -1 } },
-            { $skip: (page - 1) * limit },
-            { $limit: limit },
+            {
+              $facet: {
+                items: [{ $skip: (page - 1) * limit }, { $limit: limit }],
+                count: [{ $count: 'n' }],
+              },
+            },
           ],
-          as: 'posts',
+          as: 'postsFacet',
         },
       },
-      // Stage 3: $lookup count of total posts for pagination (uses postSchema.index({ userId: 1, _id: -1 }))
+      // Stage 3: Extract paged posts and total count from the single lookup facet
       {
-        $lookup: {
-          from: 'posts',
-          localField: '_id',
-          foreignField: 'userId',
-          pipeline: [{ $count: 'n' }],
-          as: 'postCount',
+        $addFields: {
+          posts: { $ifNull: [{ $arrayElemAt: ['$postsFacet.items', 0] }, []] },
+          postCount: { $ifNull: [{ $arrayElemAt: ['$postsFacet.count', 0] }, []] },
         },
       },
-      // Stage 4: Exclude passwordHash from output
+      // Stage 4: Exclude passwordHash and temporary facet field from output
       {
         $project: {
           passwordHash: 0,
+          postsFacet: 0,
         },
       },
     ]);

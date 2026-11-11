@@ -11,6 +11,9 @@
     "build:binary": "bun build src/index.ts --compile --minify --outfile dist/server",
     "build:seed": "bun build src/seed.ts --compile --minify --outfile dist/seed",
     "typecheck": "tsc --noEmit",
+    "lint": "eslint src scripts",
+    "format": "prettier --write \"src/**/*.ts\" \"scripts/**/*.ts\"",
+    "format:check": "prettier --check \"src/**/*.ts\" \"scripts/**/*.ts\"",
     "sync:types": "tsc --project tsconfig.types.json --declaration --emitDeclarationOnly --outFile ../careguide-frontend/src/types/api-contract.d.ts"
   },
   "dependencies": {
@@ -20,7 +23,11 @@
     "zod": "^4.6.7"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@types/bun": "latest",
-    "typescript": "^5.8.2"
+    "eslint": "^10.14.0",
+    "prettier": "^3.9.10",
+    "typescript": "^5.8.2",
+    "typescript-eslint": "^8.72.2"
   }
 }

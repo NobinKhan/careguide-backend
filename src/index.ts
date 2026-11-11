@@ -20,7 +20,7 @@ if (!jwtSecret || jwtSecret.length < 32 || jwtSecret === 'replace-with-secure-se
 
 await connectDB();
 
-const origins = (process.env.CORS_ORIGINS ?? 'http://localhost:5173')
+const origins = (process.env.CORS_ORIGINS ?? 'http://localhost:5173,http://127.0.0.1:5173')
   .split(',')
   .map((o) => o.trim())
   .filter(Boolean);
@@ -39,7 +39,7 @@ const app = new Hono()
     if (err instanceof mongoose.Error.CastError) {
       return c.json({ error: 'Invalid id' }, 400);
     }
-    if ((err as any)?.code === 11000) {
+    if (err instanceof mongoose.mongo.MongoServerError && err.code === 11000) {
       return c.json({ error: 'Email is already registered' }, 409);
     }
     console.error(err);
