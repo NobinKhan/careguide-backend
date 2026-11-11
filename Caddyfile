@@ -1,0 +1,12 @@
+# Public HTTPS entry point for the API. Caddy obtains and renews a
+# Let's Encrypt certificate for API_DOMAIN automatically (the DNS A record
+# must point at this server and ports 80/443 must be open).
+{$API_DOMAIN:localhost} {
+	encode zstd gzip
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options nosniff
+		-Server
+	}
+	reverse_proxy backend:3000
+}
