@@ -59,19 +59,25 @@ bun run dev
 
 > **CORS Configuration (`CORS_ORIGINS`):** By default, `CORS_ORIGINS` allows `http://localhost:5173,http://127.0.0.1:5173`. When deploying a frontend (e.g. Cloudflare Pages) or opening Vite on a LAN IP, add the frontend origin(s) to `CORS_ORIGINS` in `.env` as a comma-separated list (for example: `CORS_ORIGINS=http://localhost:5173,http://127.0.0.1:5173,https://your-app.pages.dev`).
 
-## Docker & VPS Deployment (MongoDB 9 + Bun)
+## Docker & VPS Deployment (MongoDB 9 + Bun + Caddy)
 
-The project includes an optimized multi-stage `Dockerfile` compiling the Bun server and demo seeder into standalone Linux binaries packaged inside a hardened, zero-CVE **Chainguard** runtime:
+`docker-compose.yml` runs three containers on a private network:
+- `mongo` uses `mongo:9` with a named volume `mongo_data`. It publishes no host port.
+- `backend` is built from the `Dockerfile`: an `oven/bun:1` build stage, then the standalone binary runs on `gcr.io/distroless/cc-debian12:nonroot`. It publishes no host port.
+- `caddy` is the only public service, on ports 80 and 443. It gets and renews a Let's Encrypt certificate for `API_DOMAIN` and proxies to the backend (see `Caddyfile`).
 
 ```bash
-# 1. Clone repository on VPS
+# 1. Clone on the VPS (DNS A record for API_DOMAIN -> server IP, ports 80/443 open)
 git clone https://github.com/NobinKhan/careguide-backend.git
 cd careguide-backend
 
-# 2. Automated Build, Start & Deploy
+# 2. Configure: cp .env.example .env, then set API_DOMAIN, CORS_ORIGINS and the SEED_* passwords
+#    (JWT_SECRET is generated automatically if missing)
+
+# 3. Build and deploy (safe to re-run: no `compose down`, only the backend is replaced)
 bun run deploy
 
-# To reset demo data explicitly on deployment:
+# Deploy and reset demo data:
 bun run deploy -- --seed
 ```
 
@@ -83,7 +89,7 @@ bun run deploy -- --seed
 - `bun run dev` — Start development server with hot reload (`http://localhost:3000`)
 - `bun run start` — Start production server
 - `bun run seed` — Requires `SEED_ADMIN_PASSWORD` and `SEED_USER_PASSWORD`. Reset database, sync indexes via `mongoose.connection.syncIndexes()`, and populate deterministic demo data
-- `bun run deploy` — Native Bun script to build containers and start backend (pass `--seed` to seed demo data)
+- `bun run deploy`: rebuilds and replaces only the backend container. MongoDB and Caddy keep running. It waits for `/api/health`. Pass `-- --seed` to reset demo data.
 - `bun run build:binary` — Compile backend into standalone binary (`dist/server`)
 - `bun run build:seed` — Compile seeder into standalone binary (`dist/seed`)
 - `bun run sync:types` — Emit TypeScript contract declarations into `../careguide-frontend/src/types/api-contract.d.ts`

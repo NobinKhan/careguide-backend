@@ -1,34 +1,62 @@
-services:
-  backend:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: careguide-backend
-    restart: unless-stopped
-    ports:
-      - "${PORT:-3000}:3000"
-    environment:
-      - PORT=3000
-      - MONGODB_URI=${MONGODB_URI:-mongodb://mongo:27017/careguide}
-      - JWT_SECRET=${JWT_SECRET:?Set JWT_SECRET in .env}
-      - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:5173,http://127.0.0.1:5173}
-    depends_on:
-      mongo:
-        condition: service_healthy
+# Production stack: MongoDB (private) + backend (private) + Caddy (public, automatic HTTPS).
+# Configure everything in .env (see .env.example). Deploy with: bun run deploy
+name: ${COMPOSE_PROJECT_NAME:-careguide}
 
+services:
   mongo:
     image: mongo:9
     container_name: careguide-mongo
     restart: unless-stopped
-    ports:
-      - "127.0.0.1:27017:27017"
     volumes:
       - mongo_data:/data/db
+    networks: [careguide]
     healthcheck:
-      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
-      interval: 5s
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
       timeout: 5s
-      retries: 5
+      retries: 10
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: careguide-backend:latest
+    container_name: careguide-backend
+    restart: unless-stopped
+    # Only the variables the server needs. SEED_* passwords are passed to the
+    # seeder at run time by scripts/deploy.ts and are never stored in this container.
+    environment:
+      PORT: "3000"
+      NODE_ENV: production
+      MONGODB_URI: mongodb://mongo:27017/careguide
+      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173,http://127.0.0.1:5173}
+    depends_on:
+      mongo:
+        condition: service_healthy
+    networks: [careguide]
+
+  caddy:
+    image: caddy:2
+    container_name: careguide-caddy
+    restart: unless-stopped
+    environment:
+      API_DOMAIN: ${API_DOMAIN:-localhost}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on: [backend]
+    networks: [careguide]
 
 volumes:
   mongo_data:
+  caddy_data:
+  caddy_config:
+
+networks:
+  careguide:
