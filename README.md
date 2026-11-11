@@ -51,6 +51,7 @@ No automated tests by design (`AGENTS.md` strictly prohibits test files for this
 ```bash
 cp .env.example .env
 # Set JWT_SECRET in .env to a secure random string (at least 32 characters, e.g. openssl rand -hex 32)
+# Set SEED_ADMIN_PASSWORD and SEED_USER_PASSWORD in .env (at least 8 characters each)
 bun install
 bun run seed
 bun run dev
@@ -74,12 +75,14 @@ bun run deploy
 bun run deploy -- --seed
 ```
 
+> **Seed credentials:** `bun run seed` (and `bun run deploy -- --seed`) reads the demo account passwords from `SEED_ADMIN_PASSWORD` (admin, email from `SEED_ADMIN_EMAIL`, default `admin@careguide.bd`) and `SEED_USER_PASSWORD` (the three demo users). The seed stops with a clear error if either is missing or shorter than 8 characters. No passwords are stored in the repository.
+
 > **Security Note:** `JWT_SECRET` is mandatory in `.env` and must be at least 32 characters long. Generate one using `openssl rand -hex 32`. Anyone who deployed with previous default values must rotate their `JWT_SECRET` immediately.
 
 ## Available Scripts
 - `bun run dev` — Start development server with hot reload (`http://localhost:3000`)
 - `bun run start` — Start production server
-- `bun run seed` — Reset database, sync indexes via `mongoose.connection.syncIndexes()`, and populate deterministic demo data
+- `bun run seed` — Requires `SEED_ADMIN_PASSWORD` and `SEED_USER_PASSWORD`. Reset database, sync indexes via `mongoose.connection.syncIndexes()`, and populate deterministic demo data
 - `bun run deploy` — Native Bun script to build containers and start backend (pass `--seed` to seed demo data)
 - `bun run build:binary` — Compile backend into standalone binary (`dist/server`)
 - `bun run build:seed` — Compile seeder into standalone binary (`dist/seed`)
