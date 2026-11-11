@@ -1,7 +1,8 @@
 import { Hono } from 'hono';
-import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
+import { validate } from '../validate';
 import { NoteModel } from '../models/Note';
+import { UserModel } from '../models/User';
 import { requireAuth, requireAdmin, type AppVariables } from '../middleware/auth';
 
 const paginationSchema = z.object({
@@ -10,28 +11,38 @@ const paginationSchema = z.object({
 });
 
 const createNoteSchema = z.object({
-  title: z.string().trim().min(1, 'Title is required'),
-  content: z.string().min(1, 'Content is required'),
+  title: z.string().trim().min(1, 'Title is required').max(200, 'Title must be 200 characters or less'),
+  content: z.string().min(1, 'Content is required').max(10000, 'Content must be 10000 characters or less'),
 });
 
 const updateNoteSchema = z.object({
-  title: z.string().trim().min(1).optional(),
-  content: z.string().min(1).optional(),
+  title: z.string().trim().min(1).max(200).optional(),
+  content: z.string().min(1).max(10000).optional(),
 });
 
-export function serializeNote(doc: any): NoteDTO {
-  const isPopulated = doc.userId && typeof doc.userId === 'object' && '_id' in doc.userId;
+export function serializeNote(
+  doc: any,
+  authorMap?: Map<string, AuthorSummaryDTO | null>
+): NoteDTO {
+  const rawUserId = doc.userId?._id ? doc.userId._id : doc.userId;
+  const userIdStr = rawUserId ? String(rawUserId) : '';
+
+  let author: AuthorSummaryDTO | null = null;
+  if (authorMap) {
+    author = authorMap.get(userIdStr) ?? null;
+  } else if (doc.userId && typeof doc.userId === 'object' && 'email' in doc.userId) {
+    author = {
+      _id: String(doc.userId._id),
+      name: doc.userId.name,
+      email: doc.userId.email,
+      role: doc.userId.role,
+    };
+  }
+
   return {
     _id: String(doc._id),
-    userId: isPopulated ? String(doc.userId._id) : String(doc.userId),
-    author: isPopulated
-      ? {
-          _id: String(doc.userId._id),
-          name: doc.userId.name,
-          email: doc.userId.email,
-          role: doc.userId.role,
-        }
-      : null,
+    userId: userIdStr,
+    author,
     title: doc.title,
     content: doc.content,
     createdAt: doc.createdAt ? new Date(doc.createdAt).toISOString() : undefined,
@@ -41,7 +52,7 @@ export function serializeNote(doc: any): NoteDTO {
 
 export const noteRoutes = new Hono<{ Variables: AppVariables }>()
   .use('*', requireAuth)
-  .get('/', zValidator('query', paginationSchema), async (c) => {
+  .get('/', validate('query', paginationSchema), async (c) => {
     const authUser = c.get('user');
     const { page, limit } = c.req.valid('query');
     const skip = (page - 1) * limit;
@@ -57,14 +68,14 @@ export const noteRoutes = new Hono<{ Variables: AppVariables }>()
     ]);
 
     return c.json({
-      items: docs.map(serializeNote),
+      items: docs.map((d) => serializeNote(d)),
       page,
       limit,
       total,
       totalPages: Math.max(1, Math.ceil(total / limit)),
     });
   })
-  .get('/all', requireAdmin, zValidator('query', paginationSchema), async (c) => {
+  .get('/all', requireAdmin, validate('query', paginationSchema), async (c) => {
     const { page, limit } = c.req.valid('query');
     const skip = (page - 1) * limit;
 
@@ -74,20 +85,34 @@ export const noteRoutes = new Hono<{ Variables: AppVariables }>()
         .sort({ _id: -1 })
         .skip(skip)
         .limit(limit)
-        .populate('userId', 'name email role')
         .lean(),
       NoteModel.countDocuments({}),
     ]);
 
+    const userIds = Array.from(new Set(docs.map((d) => String(d.userId)).filter(Boolean)));
+    const authors = await UserModel.find({ _id: { $in: userIds } })
+      .select('name email role')
+      .lean();
+
+    const authorMap = new Map<string, AuthorSummaryDTO>();
+    for (const a of authors) {
+      authorMap.set(String(a._id), {
+        _id: String(a._id),
+        name: a.name,
+        email: a.email,
+        role: a.role,
+      });
+    }
+
     return c.json({
-      items: docs.map(serializeNote),
+      items: docs.map((d) => serializeNote(d, authorMap)),
       page,
       limit,
       total,
       totalPages: Math.max(1, Math.ceil(total / limit)),
     });
   })
-  .post('/', zValidator('json', createNoteSchema), async (c) => {
+  .post('/', validate('json', createNoteSchema), async (c) => {
     const authUser = c.get('user');
     const { title, content } = c.req.valid('json');
 
@@ -97,9 +122,20 @@ export const noteRoutes = new Hono<{ Variables: AppVariables }>()
       content,
     });
 
-    return c.json({ note: serializeNote(created) }, 201);
+    const authorUser = await UserModel.findById(authUser.id).select('name email role').lean();
+    const authorMap = new Map<string, AuthorSummaryDTO>();
+    if (authorUser) {
+      authorMap.set(authUser.id, {
+        _id: String(authorUser._id),
+        name: authorUser.name,
+        email: authorUser.email,
+        role: authorUser.role,
+      });
+    }
+
+    return c.json({ note: serializeNote(created, authorMap) }, 201);
   })
-  .patch('/:id', zValidator('json', updateNoteSchema), async (c) => {
+  .patch('/:id', validate('json', updateNoteSchema), async (c) => {
     const authUser = c.get('user');
     const id = c.req.param('id');
     const body = c.req.valid('json');
@@ -112,7 +148,18 @@ export const noteRoutes = new Hono<{ Variables: AppVariables }>()
       return c.json({ error: 'Note not found or access denied' }, 404);
     }
 
-    return c.json({ note: serializeNote(updated) });
+    const noteOwner = await UserModel.findById(String(updated.userId)).select('name email role').lean();
+    const authorMap = new Map<string, AuthorSummaryDTO>();
+    if (noteOwner) {
+      authorMap.set(String(updated.userId), {
+        _id: String(noteOwner._id),
+        name: noteOwner.name,
+        email: noteOwner.email,
+        role: noteOwner.role,
+      });
+    }
+
+    return c.json({ note: serializeNote(updated, authorMap) });
   })
   .delete('/:id', async (c) => {
     const authUser = c.get('user');
